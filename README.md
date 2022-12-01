@@ -29,7 +29,7 @@ where $Q$, $K$ and $V$ are the query, key and value matrices used in fast attent
 
 $\left[A \circ \sum_j \mathbf{u}_j \mathbf{Pv}_j^T\right]x = \sum_j D(\mathbf{u}_j) A D(\mathbf{v}_j) \mathbf{x}$
 
-where $D(\mathbf{z})$ is the diagonal matrix with diagonal values $z$. This means we can express our fast causal attention output as
+where $D(\mathbf{z})$ is the diagonal matrix with diagonal values $\mathbf{z}$. This means we can express our fast causal attention output as
 
 $N = \sum_m D(\mathbf{q}_m) L D(\mathbf{k}_m) V$
 
@@ -141,6 +141,10 @@ Warmup time for v1_backward-gpu-jit: 0.12377095222473145
 ### tfbm
 
 [benchmark.py](./benchmark.py) requires [tfbm](https://github.com/jackd/tfbm), a wrapper around [tf.test.Benchmark](https://www.tensorflow.org/api_docs/python/tf/test/Benchmark?hl=en) implementations.
+
+```bash
+pip install git+https://github.com/jackd/tfbm
+```
 
 ```txt
 Results for cls=Forward

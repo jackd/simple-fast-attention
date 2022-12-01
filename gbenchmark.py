@@ -1,4 +1,3 @@
-import typing as tp
 from time import time
 
 import google_benchmark as gbm
@@ -17,7 +16,6 @@ flags.DEFINE_integer("h", 16, "???")
 
 def get_args():
     FLAGS = flags.FLAGS
-    # rng = tf.random.Generator.from_seed(FLAGS.seed)
     tf.random.set_seed(FLAGS.seed)
     l = FLAGS.l
     b = FLAGS.b
@@ -29,9 +27,6 @@ def get_args():
         tf.random.normal((l, b, h, m)),
         tf.random.normal((l, b, h, d)),
     )
-
-
-# _warmup_times = []
 
 
 def v0_forward(qs, ks, vs):
@@ -81,7 +76,6 @@ def register(jit: bool = False, device: str = "cpu"):
                 call(args)
                 dt = time() - t
                 print(f"Warmup time for {name}: {dt}")
-                # _warmup_times.append((name, dt))
                 while state:
                     call(args)
 
@@ -93,7 +87,6 @@ def register(jit: bool = False, device: str = "cpu"):
 r = register(jit=True, device="cpu")
 
 fns = (v0_forward, v1_forward, v0_backward, v1_backward)
-# fns = (v1_forward,)
 
 for jit in (False, True):
     for device in ("cpu", "gpu"):
@@ -103,6 +96,3 @@ for jit in (False, True):
 
 if __name__ == "__main__":
     gbm.main()
-    # max_len = max((len(wt[0]) for wt in _warmup_times))
-    # for name, dt in _warmup_times:
-    #     print(f"{name.ljust(max_len)}: {dt}")

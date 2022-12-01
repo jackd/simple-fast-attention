@@ -1,11 +1,10 @@
 # Fast Attention: Causal Implementation Experiments
 
-Comparing implementations of [fast causal attention](https://ai.googleblog.com/2020/10/rethinking-attention-with-performers.html).
-
-Having looked at google-research's [fast attention tensorflow implementation](https://github.com/google-research/google-research/blob/master/performer/fast_attention/tensorflow/fast_attention.py), I was left scratching my head about the causal attention implementation. This gist investigates a simpler implementation.
+Having looked at google-research's [blog post](https://ai.googleblog.com/2020/10/rethinking-attention-with-performers.html) and [tensorflow implementation](https://github.com/google-research/google-research/blob/master/performer/fast_attention/tensorflow/fast_attention.py) on fast attention (FAVOR+), I was left scratching my head about the causal attention implementation. This repository investigates a simpler version.
 
 ## TL;DR
 
+- Causal attention can be concisely expressed mathematically using properties of low rank matrices and hadamard products (see Theory section below).
 - [ops/v1.py](./ops/v1.py) provide significantly simpler implementations that use neither loops over tensors nor custom gradients.
 - the implementations are much shorter (3 and 2 lines vs. 25 and 22 of the original), making it much easier to reason about
 - jit-compiling these operations is significantly faster than the originals ([ops/v0.py](./ops/v0.py))
@@ -18,25 +17,27 @@ The [google-ai blog post](https://ai.googleblog.com/2020/10/rethinking-attention
 
 ![Causal Attention](https://1.bp.blogspot.com/-kJKZ5veuREk/X5IcGdqtbCI/AAAAAAAAGtM/PWmo0lHnhSUQ5nabOwhKIN9rh6pYxFItQCLcBGAsYHQ/s1238/image4.gif)
 
-It's not immediately apparent to me what's going on here, and looking at the code (originally [here](https://github.com/google-research/google-research/blob/master/performer/fast_attention/tensorflow/fast_attention.py) but with relevant part included [here](./ops/v0.py) for convenience)
+It's not immediately apparent to me what's going on here, and looking at the code (originally [here](https://github.com/google-research/google-research/blob/master/performer/fast_attention/tensorflow/fast_attention.py) but with relevant part included [here](./ops/v0.py) for convenience) doesn't make things any clearer.
 
 My implementation (v1) takes a different approach.
 
-We consider the task is to compute the noncausal numerator $N$, where
+The task we consider is to compute the noncausal numerator $N$, where
 
 $N = \left[(Q K^T) \circ L\right] V$
 
-where $Q$, $K$ and $V$ are the query, key and value matrices used in non-causal fast attention, $L$ is a lower triangular matrix with values of $1$ on and below the diagonal and $\circ$ is the _Hadamard product_ (elementwise product). Noting that $Q$ and $K$ are low-rank (that's the whole point of performers), we can use the following handy dandy property of Hadamard products ([Property 1](http://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf)):
+where $Q$, $K$ and $V$ are the query, key and value matrices used in fast attention, $L$ is a lower triangular matrix with values of $1$ on and below the diagonal and $\circ$ is the _Hadamard product_ (elementwise product). Noting that $Q$ and $K$ are low-rank (that's the whole point of performers/FAVOR), we can use the following handy dandy property of Hadamard products ([Property 1](http://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf)):
 
-$\left[A \circ \sum_j u_j v_j^T\right]x = \sum_j D(u_j) A D(v_j) x$
+$\left[A \circ \sum_j \mathbf{u}_j \mathbf{Pv}_j^T\right]x = \sum_j D(\mathbf{u}_j) A D(\mathbf{v}_j) \mathbf{x}$
 
-where $D(z)$ is the diagonal matrix with diagonal values $z$. This means we can express our fast causal attention output as
+where $D(\mathbf{z})$ is the diagonal matrix with diagonal values $z$. This means we can express our fast causal attention output as
 
-$N = \sum_m D(q_m) L D(k_m) V.$
+$N = \sum_m D(\mathbf{q}_m) L D(\mathbf{k}_m) V$
 
-Note it is neither efficient nor necessary to compute any of the new matrices above. $D(k_m) Z$ is just the scaling of rows of $Z$ by $k_m$, while $L Z$ is the cumulative sum of $Z$ on the leading dimension. This results in a significantly simpler tensorflow implementation without the need to implement custom gradients or use python loops.
+where $\mathbf{q}_m$ and $\mathbf{k}_m$ are the $m^\text{th}$ columns of Q and K respectively.
 
-The implementation looks slighty different to the maths above because we compute $D(k_m) V$ simultaneously for all $m$ and then perform the sum over $m$ using `tf.linalg.matvec`.
+Note it is neither efficient nor necessary to compute any of the new matrices above. $D(\mathbf{k}_m) Z$ is just the scaling of rows of $Z$ by $\mathbf{k}_m$, while $L Z$ is the cumulative sum of $Z$ on the leading dimension. This results in a significantly simpler tensorflow implementation without the need to implement custom gradients or use python loops.
+
+The implementation looks slighty different to the maths above because we compute $D(\mathbf{k}_m) V$ simultaneously for all $m$ and then combine scaling and reduction over $m$ simultaneously using `tf.linalg.matvec`.
 
 ```python
 def causal_numerator(qs: tf.Tensor, ks: tf.Tensor, vs: tf.Tensor):
@@ -61,7 +62,7 @@ That's a 3-line implementation, as opposed to the 25 used in the [original](./op
 
 ### Denominator
 
-The noncausal denominator function is conceptually the same as the numerator except using the ones vector for $V$. Since the first operation involves scaling $V$, we can skip this entirely and just use the keys $ks$:
+The noncausal denominator function is conceptually the same as the numerator except using the ones vector for $V$. Since the first operation involves scaling $V$, we can skip this entirely and just use the keys `ks`:
 
 ```python
 def causal_denominator(qs, ks):
